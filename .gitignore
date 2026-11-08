@@ -1,0 +1,7 @@
+HIBAK
+.venv
+__pycache__/
+build/
+robot.exe
+robot_lib/
+frontend/dist/
