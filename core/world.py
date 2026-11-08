@@ -17,7 +17,7 @@ class Map:
                     self.robot_y = y
                     self.robot_dir = player_chars[char]
                     self.map[y][x] = "."
-                    self._discover(x, y)  # ahol a robot áll, az felfedezett mező
+                    self._discover(self.robot_x, self.robot_y)
                     return
 
     def move(self, n):
@@ -26,13 +26,11 @@ class Map:
             new_y = self.robot_dir[1] + self.robot_y
             if not(0 <= new_x < self.x and 0 <= new_y < self.y):
                 return False
+            self._discover(new_x,new_y)
             if self.map[new_y][new_x] == "#":
-                # Falba ütközéskor a fal NEM lesz felfedezett: a feladat szerint csak az a
-                # mező az, ahol a robot járt, vagy amire isThere hívódott.
                 return False
             self.robot_y = new_y
             self.robot_x = new_x
-            self._discover(new_x, new_y)
         return True
 
     def turn(self, n):
@@ -64,7 +62,6 @@ class Map:
         if current != "@":
             return False
         self.map[self.robot_y][self.robot_x] = "."
-        self._discover(self.robot_x, self.robot_y)  # a felfedezett térképen is eltűnik az arany
         self.player_gold_collected += 1
         return True
 

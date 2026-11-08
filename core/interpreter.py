@@ -41,51 +41,30 @@ class ProgramRunner:
                 return self._resolve(calcval["value"])
             case "unop":
                 operator = calcval["operator"]
+                log.append(operator) if operator == "isThere" else None
+                val = self._resolve(calcval["value"])
                 if operator == "isThere":
-                    # Napló: "isThere <paraméter> <eredmény>". Nem inicializált paraméternél
-                    # csak "isThere E_UNINITIALIZED" (paraméter nélkül), érvénytelen paraméternél
-                    # a kiértékelt paraméter is a naplóba kerül: "isThere 3 E_BAD_ARG".
-                    log.append(operator)
-                    val = self._resolve(calcval["value"])
                     log.append(val)
-                    if type(val) is not int or val not in (0, 1, 2):
+                    if type(val) is not int or val not in (0,1,2):
                         raise MineScriptRuntimeError("E_BAD_ARG")
                     res = self.map.isThere(val)
                     log.append(res)
                     return res
-                val = self._resolve(calcval["value"])
                 if type(val) is not bool:
                     raise MineScriptRuntimeError("E_BAD_OPERAND")
                 return not val
             case "binop":
                 operator = calcval["operator"]
-                # Balról jobbra: minden operandust a beolvasása után azonnal ellenőrzünk,
-                # és az első hibánál megállunk (pl. "true + c" -> E_BAD_OPERAND, a c-t
-                # már nem olvassuk be). Az = és a <> első operandusa bármilyen típusú
-                # lehet, ott a második beolvasása után nézzük a két típus egyezését.
-                # Nincs rövidzár: "true or c" esetén a c-t is beolvassuk.
-                if operator in ("=", "<>"):
-                    expected = None
-                elif operator in ("and", "or"):
-                    expected = bool
-                else:
-                    expected = int
-
                 val1 = self._resolve(calcval["value1"])
-                if expected is not None and type(val1) is not expected:
+                if operator in ["and", "or"] and type(val1) is not bool:
                     raise MineScriptRuntimeError("E_BAD_OPERAND")
+                elif operator in ["+", "-", "*", "<", "<=", ">", ">="] and type(val1) is not int:
+                    raise MineScriptRuntimeError("E_BAD_OPERAND")
+                
                 val2 = self._resolve(calcval["value2"])
-                if type(val2) is not (expected if expected is not None else type(val1)):
-                    raise MineScriptRuntimeError("E_BAD_OPERAND")
 
-                if operator == "=":
-                    return val1 == val2
-                if operator == "<>":
-                    return val1 != val2
-                if operator == "and":
-                    return val1 and val2
-                if operator == "or":
-                    return val1 or val2
+                if type(val1) != type(val2):
+                    raise MineScriptRuntimeError("E_BAD_OPERAND")
                 match operator:
                     case "+":
                         return val1 + val2
@@ -101,6 +80,11 @@ class ProgramRunner:
                         return val1 > val2
                     case ">=":
                         return val1 >= val2
+                    case "and": return val1 and val2
+                    case "or": return val1 or val2
+                    case "=": return val1 == val2
+                    case "<>": return val1 != val2
+                    
 
 
     def _resolve(self, val:str):
@@ -147,13 +131,10 @@ class ProgramRunner:
                 else:
                     self.variables[ident] = val
             elif kind in ["step", "turn"]:
-                # Előbb az API neve kerül a naplóba, hogy nem inicializált paraméternél
-                # "step forward E_UNINITIALIZED" legyen. Rossz paraméternél (logikai érték
-                # vagy negatív szám) a kiértékelt paraméter is látszik: "turn by -1 E_BAD_ARG".
                 log.append("step forward" if kind == "step" else "turn by")
                 val = self._resolve(statemant["value"])
                 log.append(val)
-                if type(val) is not int or val < 0:
+                if type(val) is not int:
                     raise MineScriptRuntimeError("E_BAD_ARG")
                 if kind == "step":
                     res = self.map.move(val)
