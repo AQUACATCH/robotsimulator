@@ -73,4 +73,3 @@ class Map:
 
     def print(self, out):
         self.console.append(out)
-        print(out)

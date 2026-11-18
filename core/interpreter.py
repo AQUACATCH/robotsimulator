@@ -149,7 +149,7 @@ class ProgramRunner:
                 log.append("step forward" if kind == "step" else "turn by")
                 val = self._resolve(statemant["value"])
                 log.append(val)
-                if type(val) is not int:
+                if type(val) is not int or val < 0:
                     raise MineScriptRuntimeError("E_BAD_ARG")
                 if kind == "step":
                     res = self.map.move(val)
@@ -180,6 +180,19 @@ class ProgramRunner:
                 if type(ident_val) is not list:
                     raise MineScriptRuntimeError("E_NOT_LIST")
                 ident_val.append(val)
+            elif kind == "remove":
+                ident = statemant["identifier"]
+                if ident not in self.variables:
+                    raise MineScriptRuntimeError("E_UNINITIALIZED")
+                ident_val = self.variables[ident]
+                if type(ident_val) is not list:
+                    raise MineScriptRuntimeError("E_NOT_LIST")
+                val = self._resolve(statemant["value"])
+                if type(val) is not int:
+                    raise MineScriptRuntimeError("E_BAD_OPERAND")
+                if 0 > val or val >= len(ident_val):
+                    raise MineScriptRuntimeError("E_OUT_OF_BOUNDS")
+                del ident_val[val]
             elif kind == "else":
                 pass
             elif kind == "error":

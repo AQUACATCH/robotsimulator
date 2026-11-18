@@ -3,7 +3,7 @@ operators = ["+", "-", "*", "=", "<>", "<", "<=", ">", ">=", "@"]
 ident = [
     "and", "by", "else", "false", "forward", "here", "if",
     "isThere", "mine", "not", "or", "print", "set", "step",
-    "to", "true", "turn", "while", "add", "list", "length"
+    "to", "true", "turn", "while", "add", "list", "length", "remove"
 ]
 
 starter_comm_syntax_map = {
@@ -15,7 +15,8 @@ starter_comm_syntax_map = {
         "if": ["simpleval"],
         "else": [], 
         "while": ["simpleval"],
-        "add": ["simpleval", "to", "ident"]
+        "add": ["simpleval", "to", "ident"],
+        "remove": ["ident", "@", "simpleval"]
     }
 
 def calculatedValue(rem_tokens):
@@ -28,8 +29,6 @@ def calculatedValue(rem_tokens):
         return {"type": "binop", "operator": rem_tokens[1], "value1": rem_tokens[0], "value2": rem_tokens[2]}
     else:
         return "SYNTAX_ERROR"
-
-        
 
 def parse_map(data: list[str]):
     [y,x] = data.pop(0).split(" ")
