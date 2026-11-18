@@ -1,9 +1,9 @@
 
-operators = ["+", "-", "*", "=", "<>", "<", "<=", ">", ">="]
+operators = ["+", "-", "*", "=", "<>", "<", "<=", ">", ">=", "@"]
 ident = [
     "and", "by", "else", "false", "forward", "here", "if",
     "isThere", "mine", "not", "or", "print", "set", "step",
-    "to", "true", "turn", "while"
+    "to", "true", "turn", "while", "add", "list", "length"
 ]
 
 starter_comm_syntax_map = {
@@ -14,14 +14,15 @@ starter_comm_syntax_map = {
         "set": ["ident","to", "calculatedval"], 
         "if": ["simpleval"],
         "else": [], 
-        "while": ["simpleval"]
+        "while": ["simpleval"],
+        "add": ["simpleval", "to", "ident"]
     }
 
 def calculatedValue(rem_tokens):
     length = len(rem_tokens)
     if length == 1:
         return {"type": "simple", "value": rem_tokens[0]}
-    elif length == 2 and ("not" in rem_tokens or "isThere" in rem_tokens):
+    elif length == 2 and ("not" in rem_tokens or "isThere" in rem_tokens or "length" in rem_tokens):
         return {"type": "unop", "operator": rem_tokens[0], "value": rem_tokens[1]}
     elif length == 3 and rem_tokens[1] in ["and", "or", *operators]:
         return {"type": "binop", "operator": rem_tokens[1], "value1": rem_tokens[0], "value2": rem_tokens[2]}
@@ -37,6 +38,11 @@ def parse_map(data: list[str]):
         map.append(data.pop(0).strip())
 
     return [data, map, [int(y),int(x)]]
+
+def syntax_error(parsed_line):
+    parsed_line["type"] = "error"
+    parsed_line["err"] = "SYNTAX_ERROR"
+    return parsed_line
 
 
 def parse_code(line: str,):
@@ -84,9 +90,7 @@ def parse_code(line: str,):
     first_token = new_line.pop(0)
     parsed_line["indent_level"] = indent_length
     if not first_token in starter_comm_syntax_map.keys():
-        parsed_line["type"] = "error"
-        parsed_line["err"] = "SYNTAX_ERROR"
-        return parsed_line
+        return syntax_error(parsed_line)
 
     parsed_line["type"] = first_token
     if first_token in ["while", "if", "else"]:
@@ -102,18 +106,16 @@ def parse_code(line: str,):
             case "calculatedval":
                 ret = calculatedValue([next_token, *new_line])
                 if ret == "SYNTAX_ERROR":
-                    parsed_line["type"] = "error"
-                    parsed_line["err"] = "SYNTAX_ERROR"
-                    return parsed_line
+                    return syntax_error(parsed_line)
                 parsed_line["calcvalue"] = ret
                 return parsed_line
             case _:
                 if next_token == token:
                     continue
                 else:
-                    parsed_line["type"] = "error"
-                    parsed_line["err"] = "SYNTAX_ERROR"
-                    return parsed_line
+                    return syntax_error(parsed_line)
+    if len(new_line) != 0:
+        return syntax_error(parsed_line)
     return parsed_line
 
 def indent_code(lines: list[str]):

@@ -50,6 +50,10 @@ class ProgramRunner:
                     res = self.map.isThere(val)
                     log.append(res)
                     return res
+                elif operator == "length":
+                    if type(val) is not list:
+                        raise MineScriptRuntimeError("E_NOT_LIST")
+                    return len(val)
                 if type(val) is not bool:
                     raise MineScriptRuntimeError("E_BAD_OPERAND")
                 return not val
@@ -61,6 +65,17 @@ class ProgramRunner:
                 elif operator in ["+", "-", "*", "<", "<=", ">", ">="] and type(val1) is not int:
                     raise MineScriptRuntimeError("E_BAD_OPERAND")
                 
+                if operator == "@":
+                    if type(val1) is not list:
+                        raise MineScriptRuntimeError("E_BAD_OPERAND")
+                    val2 = self._resolve(calcval["value2"])
+                    if type(val2) is not int:
+                        raise MineScriptRuntimeError("E_BAD_OPERAND")
+                    try:
+                        return val1[val2]
+                    except IndexError:
+                        raise MineScriptRuntimeError("E_OUT_OF_BOUNDS")
+                    
                 val2 = self._resolve(calcval["value2"])
 
                 if type(val1) != type(val2):
@@ -84,14 +99,14 @@ class ProgramRunner:
                     case "or": return val1 or val2
                     case "=": return val1 == val2
                     case "<>": return val1 != val2
-                    
-
 
     def _resolve(self, val:str):
         if val == "true":
             return True
         if val == "false":
             return False
+        if val == "list":
+            return []
         if val.isdecimal():
             return int(val)
         if val not in self.variables:
@@ -155,17 +170,23 @@ class ProgramRunner:
                 log.append(kind)
                 val = self._resolve(statemant["value"])
                 self.map.print(val)
-                log.append(val)     
+                log.append(str(val)) 
+            elif kind == "add":
+                val = self._resolve(statemant["value"])
+                ident = statemant["identifier"]
+                if ident not in self.variables:
+                    raise MineScriptRuntimeError("E_UNINITIALIZED")
+                ident_val = self.variables[ident]
+                if type(ident_val) is not list:
+                    raise MineScriptRuntimeError("E_NOT_LIST")
+                ident_val.append(val)
             elif kind == "else":
                 pass
+            elif kind == "error":
+                raise MineScriptRuntimeError(statemant["err"])
             else:
                 raise Exception("Hibás sor fordítás")
 
-            """mp = self.map.get_map() if len(log) > 1 else None
-            if mp is not None:
-                for line in mp:
-                    print(line)
-                print()"""
             return log, False
                 
         except MineScriptRuntimeError as err:
