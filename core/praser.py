@@ -1,9 +1,12 @@
+import json
+from .interpreter import BuildError
 
 operators = ["+", "-", "*", "=", "<>", "<", "<=", ">", ">=", "@"]
 ident = [
     "and", "by", "else", "false", "forward", "here", "if",
     "isThere", "mine", "not", "or", "print", "set", "step",
-    "to", "true", "turn", "while", "add", "list", "length", "remove"
+    "to", "true", "turn", "while", "add", "list", "length", 
+    "remove", "drill"
 ]
 
 starter_comm_syntax_map = {
@@ -16,7 +19,8 @@ starter_comm_syntax_map = {
         "else": [], 
         "while": ["simpleval"],
         "add": ["simpleval", "to", "ident"],
-        "remove": ["ident", "@", "simpleval"]
+        "remove": ["ident", "@", "simpleval"],
+        "drill": ["forward"]
     }
 
 def calculatedValue(rem_tokens):
@@ -35,8 +39,31 @@ def parse_map(data: list[str]):
     map: list[str] = []
     for _ in range(int(y)):
         map.append(data.pop(0).strip())
+    if "{" in data[0]:
+        settings_str = ""
+        while True:
+            line = data.pop(0).strip("\n")
+            settings_str += line
+            if "}" in line:
+                break
+        if "}" not in settings_str:
+            raise BuildError("SYNTAX_ERROR", "Hibás beállítások syntaxis")
+        try:
+            settings = json.loads(settings_str)
+        except:
+            raise BuildError("SYNTAX_ERROR", "Hibás beállítások syntaxis")
+    else:
+        settings = {
+            "battery_cap": "15",
+            "drill_usage": "1",
+            "step_usage": "1",
+            "turn_usage": "1",
+            "mine_usage": "1",
+            "isTher_usage": "1",
+            "print_usage": "1",
+        } 
 
-    return [data, map, [int(y),int(x)]]
+    return [data, map, [int(y),int(x)], settings]
 
 def syntax_error(parsed_line):
     parsed_line["type"] = "error"

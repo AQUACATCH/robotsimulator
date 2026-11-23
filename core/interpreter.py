@@ -7,10 +7,16 @@ class MineScriptRuntimeError(Exception):
         super().__init__(code)
         self.code = code
 
+class BuildError(Exception):
+    def __init__(self, code, msg):
+        super().__init__(code, msg)
+        self.code = code
+        self.msg = msg
+
 class ProgramRunner:
     def __init__(self, lines_raw):
-        [data, map, size] = parse_map(lines_raw)
-        self.og_map = Map(map, size)
+        [data, map, size, settings] = parse_map(lines_raw)
+        self.og_map = Map(map, size, settings) # server.py-ban le kell kezelni, ha errort kap
         self._reset_map()
         self.variables = {}
         self.condition_true = None

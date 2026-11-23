@@ -1,0 +1,41 @@
+1. Új Kulcsszó: drill
+
+használat:
+    drill forward
+
+    - Előre fúr eggyet, ha fúrható kőzet van előtte és oda is lép, ellenkező eset: error
+
+
+2. Térkép syntaxis változtatás:
+új mezők:
+    - + : Kifúrható kőzet
+    - T : Tartó oszlop
+    - ~ : Spawn point
+
+Beállítások:
+
+- Trékép megadása után lehet beállítani értékeket az alábbi syntaxissal:
+
+5 10
+.#..@..#.@
+.#.##.##..
+>.@.@@.@.#
+##.#..#.#.
+.@..#..@..
+{
+    "battery_cap": "int",
+    "drill_usage": "int",
+    "step_usage": "int",
+    "turn_usage": "int",
+    "mine_usage": "int",
+    "isTher_usage": "int",
+    "print_usage": "int",
+}
+
+- A zárójeleken bellül JSON syntaxisnak megfelelően lehet megadni a felsorolt értékeket
+- Nem lehet a map megadása és a beállítások között enter
+- Ha nem ad meg a felhasználó beállításokat akkot alapvetően minden érték 1 lesz, kivéve a battery_cap aminek az értéke 15-lesz
+
+3. Új errorok:
+E_NOT_DRILLABLE
+E_OUT_OF_ENERGY
