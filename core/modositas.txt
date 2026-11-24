@@ -1,9 +1,16 @@
-1. Új Kulcsszó: drill
+1. Új Kulcsszó: drill, place, charge
 
 használat:
     drill forward
 
     - Előre fúr eggyet, ha fúrható kőzet van előtte és oda is lép, ellenkező eset: error
+    - Ha a környező 6 mező nem számít tartó mezőnek (#, T, +) akkor beomlik a bánya
+
+    place here
+    - Letesz egy támaszt a robot alá (ha arany van a robot alatt akkor az megsemmisül)
+
+    charge
+    - feltölti a robot energiáját maxra
 
 
 2. Térkép syntaxis változtatás:
@@ -30,6 +37,7 @@ Beállítások:
     "mine_usage": "int",
     "isTher_usage": "int",
     "print_usage": "int",
+    "place_usage": "int"
 }
 
 - A zárójeleken bellül JSON syntaxisnak megfelelően lehet megadni a felsorolt értékeket
@@ -39,3 +47,4 @@ Beállítások:
 3. Új errorok:
 E_NOT_DRILLABLE
 E_OUT_OF_ENERGY
+E_MINE_COLLAPSE

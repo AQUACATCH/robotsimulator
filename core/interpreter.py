@@ -1,17 +1,8 @@
 from .praser import parse_map, parse_code, indent_code
 from .world import Map
+from .errors import MineScriptRuntimeError
 import copy
 
-class MineScriptRuntimeError(Exception):
-    def __init__(self, code):
-        super().__init__(code)
-        self.code = code
-
-class BuildError(Exception):
-    def __init__(self, code, msg):
-        super().__init__(code, msg)
-        self.code = code
-        self.msg = msg
 
 class ProgramRunner:
     def __init__(self, lines_raw):
@@ -51,7 +42,7 @@ class ProgramRunner:
                 val = self._resolve(calcval["value"])
                 if operator == "isThere":
                     log.append(val)
-                    if type(val) is not int or val not in (0,1,2):
+                    if type(val) is not int or val not in (0,1,2,3,4,5):
                         raise MineScriptRuntimeError("E_BAD_ARG")
                     res = self.map.isThere(val)
                     log.append(res)
@@ -77,10 +68,9 @@ class ProgramRunner:
                     val2 = self._resolve(calcval["value2"])
                     if type(val2) is not int:
                         raise MineScriptRuntimeError("E_BAD_OPERAND")
-                    try:
-                        return val1[val2]
-                    except IndexError:
+                    if not 0 <= val2 < len(val1):
                         raise MineScriptRuntimeError("E_OUT_OF_BOUNDS")
+                    return val1[val2]
                     
                 val2 = self._resolve(calcval["value2"])
 
@@ -158,25 +148,38 @@ class ProgramRunner:
                 if type(val) is not int or val < 0:
                     raise MineScriptRuntimeError("E_BAD_ARG")
                 if kind == "step":
-                    res = self.map.move(val)
-                    if not res:
-                        raise MineScriptRuntimeError("E_BEDROCK_HIT")
+                    self.map.move(val)
                 else:
                     self.map.turn(val)
+
             elif kind == "mine":
                 log.append("mine here")
-                if not self.map.mineHere():
-                    raise MineScriptRuntimeError("E_NO_GOLD")
+                self.map.mineHere()
+                
+            elif kind == "drill":
+                log.append("drill forward")
+                self.map.drill()
+
+            elif kind == "place":
+                log.append("place here")
+                self.map.place()
+
+            elif kind == "charge":
+                log.append("charge")
+                self.map.charge()
+
             elif kind in ["while", "if"]:
                 val = self._resolve(statemant["value"])
                 if type(val) is not bool:
                     raise MineScriptRuntimeError("E_NON_BOOL_CONDITION")
                 self.condition_true = val
+
             elif kind == "print":
                 log.append(kind)
                 val = self._resolve(statemant["value"])
                 self.map.print(val)
                 log.append(str(val)) 
+
             elif kind == "add":
                 val = self._resolve(statemant["value"])
                 ident = statemant["identifier"]
@@ -186,6 +189,7 @@ class ProgramRunner:
                 if type(ident_val) is not list:
                     raise MineScriptRuntimeError("E_NOT_LIST")
                 ident_val.append(val)
+
             elif kind == "remove":
                 ident = statemant["identifier"]
                 if ident not in self.variables:
@@ -199,6 +203,7 @@ class ProgramRunner:
                 if 0 > val or val >= len(ident_val):
                     raise MineScriptRuntimeError("E_OUT_OF_BOUNDS")
                 del ident_val[val]
+
             elif kind == "else":
                 pass
             elif kind == "error":

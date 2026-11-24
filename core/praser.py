@@ -1,12 +1,12 @@
 import json
-from .interpreter import BuildError
+from .errors import BuildError
 
 operators = ["+", "-", "*", "=", "<>", "<", "<=", ">", ">=", "@"]
 ident = [
     "and", "by", "else", "false", "forward", "here", "if",
     "isThere", "mine", "not", "or", "print", "set", "step",
     "to", "true", "turn", "while", "add", "list", "length", 
-    "remove", "drill"
+    "remove", "drill", "place", "charge"
 ]
 
 starter_comm_syntax_map = {
@@ -20,7 +20,9 @@ starter_comm_syntax_map = {
         "while": ["simpleval"],
         "add": ["simpleval", "to", "ident"],
         "remove": ["ident", "@", "simpleval"],
-        "drill": ["forward"]
+        "drill": ["forward"],
+        "place": ["here"],
+        "charge": []
     }
 
 def calculatedValue(rem_tokens):
@@ -59,8 +61,9 @@ def parse_map(data: list[str]):
             "step_usage": "1",
             "turn_usage": "1",
             "mine_usage": "1",
-            "isTher_usage": "1",
+            "isThere_usage": "1",
             "print_usage": "1",
+            "place_usage":"1"
         } 
 
     return [data, map, [int(y),int(x)], settings]
