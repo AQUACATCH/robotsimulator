@@ -1,4 +1,5 @@
 from core.interpreter import ProgramRunner
+from core.errors import BuildError
 
 
 def logger(logList:list, file):
@@ -15,7 +16,12 @@ def runScriptQ(path, outPath):
             file_content.append(line)
     f.close()
 
-    program = ProgramRunner(file_content)
+    try:
+        program = ProgramRunner(file_content)
+    except BuildError as e:
+        print(e.code)
+        print(e.msg)
+        return
 
     with open(outPath, "w") as outF:
         while True:

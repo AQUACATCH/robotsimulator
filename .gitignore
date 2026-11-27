@@ -5,3 +5,4 @@ build/
 robot.exe
 robot_lib/
 frontend/dist/
+minescript_tests

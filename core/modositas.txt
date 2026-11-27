@@ -1,4 +1,4 @@
-1. Új Kulcsszó: drill, place, charge
+1. Új robot API: drill, place, charge, safeToDrill
 
 használat:
     drill forward
@@ -11,6 +11,10 @@ használat:
 
     charge
     - feltölti a robot energiáját maxra
+
+    safeToDrill
+    - igaz/hamis értéket ad vissza, ami eldönti, hogy ha robot előtti követ kifúrja, akkor beomlik-e a bánya
+    - Fontos, hogy ez nem garantálja azt hogy a robot előtti terület kifúrható
 
 
 2. Térkép syntaxis változtatás:
@@ -30,14 +34,15 @@ Beállítások:
 ##.#..#.#.
 .@..#..@..
 {
-    "battery_cap": "int",
-    "drill_usage": "int",
-    "step_usage": "int",
-    "turn_usage": "int",
-    "mine_usage": "int",
-    "isTher_usage": "int",
-    "print_usage": "int",
-    "place_usage": "int"
+    "battery_cap": int,
+    "drill_usage": int,
+    "step_usage": int,
+    "turn_usage": int,
+    "mine_usage": int,
+    "isTher_usage": int,
+    "print_usage": int,
+    "place_usage": int,
+    "safeToDrill_usage": int
 }
 
 - A zárójeleken bellül JSON syntaxisnak megfelelően lehet megadni a felsorolt értékeket
@@ -47,4 +52,6 @@ Beállítások:
 3. Új errorok:
 E_NOT_DRILLABLE
 E_OUT_OF_ENERGY
+E_CANNOT_CHARGE
 E_MINE_COLLAPSE
+E_CANNOT_PLACE

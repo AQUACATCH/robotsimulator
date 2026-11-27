@@ -103,6 +103,8 @@ class ProgramRunner:
             return False
         if val == "list":
             return []
+        if val == "safeToDrill":
+            return self.map.safeToDrill()
         if val.isdecimal():
             return int(val)
         if val not in self.variables:
@@ -177,8 +179,8 @@ class ProgramRunner:
             elif kind == "print":
                 log.append(kind)
                 val = self._resolve(statemant["value"])
-                self.map.print(val)
                 log.append(str(val)) 
+                self.map.print(val)
 
             elif kind == "add":
                 val = self._resolve(statemant["value"])
@@ -187,7 +189,9 @@ class ProgramRunner:
                     raise MineScriptRuntimeError("E_UNINITIALIZED")
                 ident_val = self.variables[ident]
                 if type(ident_val) is not list:
-                    raise MineScriptRuntimeError("E_NOT_LIST")
+                    raise MineScriptRuntimeError("E_NOT_LIST") # Új
+                if len(ident_val) >= 100:
+                    raise MineScriptRuntimeError("E_LIST_OVERFLOW") # Új
                 ident_val.append(val)
 
             elif kind == "remove":
@@ -229,6 +233,7 @@ class ProgramRunner:
             self.ended = True
             return ["EOR"]
         if self.exec_count >= 1000:
+            self.ended = True
             return ["INSTRUCTION_COUNT_LIMIT_EXCEEDED"]
         self.exec_count += 1
         log, is_errored = self._execute(line)

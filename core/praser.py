@@ -6,7 +6,7 @@ ident = [
     "and", "by", "else", "false", "forward", "here", "if",
     "isThere", "mine", "not", "or", "print", "set", "step",
     "to", "true", "turn", "while", "add", "list", "length", 
-    "remove", "drill", "place", "charge"
+    "remove", "drill", "place", "charge", "safeToDrill"
 ]
 
 starter_comm_syntax_map = {
@@ -25,15 +25,22 @@ starter_comm_syntax_map = {
         "charge": []
     }
 
+def syntax_error(line):
+    raise BuildError("SYNTAX_ERROR", f"Hiba az alábbi sorban:\n\t{line}")
+
 def calculatedValue(rem_tokens):
     length = len(rem_tokens)
-    if length == 1:
-        return {"type": "simple", "value": rem_tokens[0]}
-    elif length == 2 and ("not" in rem_tokens or "isThere" in rem_tokens or "length" in rem_tokens):
-        return {"type": "unop", "operator": rem_tokens[0], "value": rem_tokens[1]}
-    elif length == 3 and rem_tokens[1] in ["and", "or", *operators]:
-        return {"type": "binop", "operator": rem_tokens[1], "value1": rem_tokens[0], "value2": rem_tokens[2]}
-    else:
+    unoperators = ["not", "isThere", "length"]
+    try:
+        if length == 1:
+            return {"type": "simple", "value": rem_tokens[0]}
+        elif length == 2 and rem_tokens[0] in unoperators:
+            return {"type": "unop", "operator": rem_tokens[0], "value": rem_tokens[1]}
+        elif length == 3 and rem_tokens[1] in ["and", "or", *operators]:
+            return {"type": "binop", "operator": rem_tokens[1], "value1": rem_tokens[0], "value2": rem_tokens[2]}
+        else:
+            return "SYNTAX_ERROR"
+    except:
         return "SYNTAX_ERROR"
 
 def parse_map(data: list[str]):
@@ -41,37 +48,37 @@ def parse_map(data: list[str]):
     map: list[str] = []
     for _ in range(int(y)):
         map.append(data.pop(0).strip())
-    if "{" in data[0]:
+    if len(data) > 0 and "{" in data[0]:
         settings_str = ""
-        while True:
-            line = data.pop(0).strip("\n")
-            settings_str += line
-            if "}" in line:
-                break
-        if "}" not in settings_str:
-            raise BuildError("SYNTAX_ERROR", "Hibás beállítások syntaxis")
         try:
-            settings = json.loads(settings_str)
+            while True:
+                line = data.pop(0).strip("\n")
+                settings_str += line
+                if "}" in line:
+                    break
+            if "}" not in settings_str:
+                raise BuildError("SYNTAX_ERROR", "Hibás beállítások syntaxis")
+            try:
+                settings = json.loads(settings_str)
+            except:
+                raise BuildError("SYNTAX_ERROR", "Hibás beállítások syntaxis")
         except:
             raise BuildError("SYNTAX_ERROR", "Hibás beállítások syntaxis")
     else:
         settings = {
             "battery_cap": "15",
-            "drill_usage": "1",
-            "step_usage": "1",
-            "turn_usage": "1",
-            "mine_usage": "1",
-            "isThere_usage": "1",
-            "print_usage": "1",
-            "place_usage":"1"
+            "drill_usage": "0",
+            "step_usage": "0",
+            "turn_usage": "0",
+            "mine_usage": "0",
+            "isThere_usage": "0",
+            "print_usage": "0",
+            "place_usage":"0"
         } 
 
     return [data, map, [int(y),int(x)], settings]
 
-def syntax_error(parsed_line):
-    parsed_line["type"] = "error"
-    parsed_line["err"] = "SYNTAX_ERROR"
-    return parsed_line
+
 
 
 def parse_code(line: str,):
@@ -119,14 +126,17 @@ def parse_code(line: str,):
     first_token = new_line.pop(0)
     parsed_line["indent_level"] = indent_length
     if not first_token in starter_comm_syntax_map.keys():
-        return syntax_error(parsed_line)
+        syntax_error(line)
 
     parsed_line["type"] = first_token
     if first_token in ["while", "if", "else"]:
         parsed_line["block"] = []
 
     for token in starter_comm_syntax_map[first_token]:
-        next_token = new_line.pop(0)
+        try:
+            next_token = new_line.pop(0)
+        except IndexError:
+            syntax_error(line)
         match token:
             case "simpleval":
                 parsed_line["value"] = next_token
@@ -135,16 +145,16 @@ def parse_code(line: str,):
             case "calculatedval":
                 ret = calculatedValue([next_token, *new_line])
                 if ret == "SYNTAX_ERROR":
-                    return syntax_error(parsed_line)
+                    syntax_error(line)
                 parsed_line["calcvalue"] = ret
                 return parsed_line
             case _:
                 if next_token == token:
                     continue
                 else:
-                    return syntax_error(parsed_line)
+                    syntax_error(line)
     if len(new_line) != 0:
-        return syntax_error(parsed_line)
+        syntax_error(line)
     return parsed_line
 
 def indent_code(lines: list[str]):
