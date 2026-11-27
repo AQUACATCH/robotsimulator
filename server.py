@@ -4,6 +4,8 @@ import re
 import sys
 from pathlib import Path
 from threading import RLock, Thread
+from core.errors import BuildError
+from flask_api import status
 
 from flask import Flask, jsonify, request, send_from_directory
 # A webview-t és a werkzeug szervert csak a grafikus ágban importáljuk (lásd lent),
@@ -459,7 +461,6 @@ def reset():
         _current_session().reset()
         return jsonify(_current_session().state())
 
-
 @app.get("/api/log")
 def get_log():
     """A naplófájl aktuális tartalma (a videóban a „Napló megnyitása” gombhoz)."""
@@ -543,11 +544,12 @@ def _choose_gui():
     return None if _has_webview2() else "qt"
 
 
-def run_gui(input_path, output_path):
+def run_gui():
     import webview
     from werkzeug.serving import make_server
 
-    configure(input_path, output_path)
+    load()
+
     # 0-s port: az operációs rendszer ad egy szabad portot, így nem ütközünk más programmal.
     server = make_server("127.0.0.1", 0, app)
     url = f"http://127.0.0.1:{server.server_port}"
@@ -568,6 +570,19 @@ def run_gui(input_path, output_path):
             webview.start(gui="qt")
     finally:
         server.shutdown()
+
+@app.post('/api/load')
+def load():
+    inputpath = request.form.get('input')
+    outputpath = request.form.get('output')
+
+    try:
+        configure(inputpath,outputpath)
+    except BuildError as error:
+
+        return error.msg
+
+    return {inputpath,outputpath}, status.HTTP_200_OK
 
 
 if __name__ == "__main__":
