@@ -70,7 +70,7 @@ class ProgramRunner:
                         raise MineScriptRuntimeError("E_BAD_OPERAND")
                     if not 0 <= val2 < len(val1):
                         raise MineScriptRuntimeError("E_OUT_OF_BOUNDS")
-                    return val1[val2]
+                    return copy.deepcopy(val1[val2])
                     
                 val2 = self._resolve(calcval["value2"])
 
