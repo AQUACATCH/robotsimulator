@@ -365,6 +365,8 @@ class SimulatorSession:
                           "running": self.status == "running",
                           "instruction_count": self.runner.exec_count,
                           "last_step": self.last_step, "error": self.error},
+            "current_energy" :  self.runner.map.energy,
+            "max_energy": self.runner.map.energy_capacity,
         }
 
 
