@@ -2,6 +2,8 @@ HIBAK
 .venv
 __pycache__/
 build/
+dist/
 robot.exe
 robot_lib/
 frontend/dist/
+project.zip

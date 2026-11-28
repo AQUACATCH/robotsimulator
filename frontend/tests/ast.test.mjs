@@ -4,7 +4,9 @@ import assert from 'node:assert/strict'
 function valueToText(v) {
   if (v.kind === 'simple') return v.a
   if (v.kind === 'isThere') return `isThere ${v.a}`
-  if (v.kind === 'unop') return `not ${v.a}`
+  if (v.kind === 'safeToDrill') return 'safeToDrill'
+  if (v.kind === 'list') return 'list'
+  if (v.kind === 'unop') return `${v.op} ${v.a}`
   return `${v.a} ${v.op} ${v.b}`
 }
 
@@ -22,6 +24,11 @@ function toText(program) {
         case 'step': emit(`step forward ${n.arg}`, depth, n.id); break
         case 'turn': emit(`turn by ${n.arg}`, depth, n.id); break
         case 'mine': emit('mine here', depth, n.id); break
+        case 'drill': emit('drill forward', depth, n.id); break
+        case 'place': emit('place here', depth, n.id); break
+        case 'charge': emit('charge', depth, n.id); break
+        case 'add': emit(`add ${n.arg} to ${n.ident}`, depth, n.id); break
+        case 'remove': emit(`remove ${n.ident} @ ${n.arg}`, depth, n.id); break
         case 'print': emit(`print ${n.arg}`, depth, n.id); break
         case 'while':
           emit(`while ${n.cond}`, depth, n.id)
@@ -149,5 +156,33 @@ assert.deepEqual(A.clickTarget(p, w), { targetId: w, where: 'body' })
 assert.deepEqual(A.clickTarget(p, ie), { targetId: ie, where: 'then' })
 assert.deepEqual(A.clickTarget(p, s1), { targetId: s1, where: 'after' })
 assert.deepEqual(A.clickTarget(p, 'nincs-ilyen'), { targetId: null, where: 'end' })
+
+let r = []
+const add = (kind, fill) => { const b = A.createBlock(kind); fill?.(b); r = A.insertBlock(r, null, 'end', b); return b }
+add('set', b => { b.ident = 'biztos'; b.value = { kind: 'safeToDrill' } })
+const ifb = add('if', b => b.cond = 'biztos')
+r = A.insertBlock(r, ifb.id, 'then', A.createBlock('drill'))
+add('place'); add('charge')
+assert.equal(toText(r).source, 'set biztos to safeToDrill\nif biztos\n  drill forward\nplace here\ncharge')
+assert.deepEqual(A.emptyFieldIds(r), [])
+for (const kw of ['drill', 'place', 'charge', 'safeToDrill', 'list', 'add', 'remove', 'length']) assert.ok(A.identError(kw), kw)
+assert.equal(A.simplevalError('list'), null)
+for (const kind of ['mine', 'drill', 'place', 'charge']) assert.ok(A.NO_FIELD_TYPES.has(kind))
+assert.equal(A.slotState(r, palette('drill'), ifb.id, 'then'), 'ok')
+
+let l = []
+const put = (kind, fill) => { const b = A.createBlock(kind); fill?.(b); l = A.insertBlock(l, null, 'end', b); return b }
+put('set', b => { b.ident = 'x'; b.value = { kind: 'list' } })
+put('add', b => { b.arg = '7'; b.ident = 'x' })
+put('add', b => { b.arg = 'list'; b.ident = 'x' })
+put('set', b => { b.ident = 'n'; b.value = { kind: 'unop', op: 'length', a: 'x' } })
+put('set', b => { b.ident = 'e'; b.value = { kind: 'binop', op: '@', a: 'x', b: '0' } })
+put('remove', b => { b.ident = 'x'; b.arg = '1' })
+assert.equal(toText(l).source,
+  'set x to list\nadd 7 to x\nadd list to x\nset n to length x\nset e to x @ 0\nremove x @ 1')
+assert.deepEqual(A.emptyFieldIds(l), [])
+const ea = put('add', b => { b.arg = '1' })
+const er = put('remove', b => { b.arg = '0' })
+assert.deepEqual(A.emptyFieldIds(l), [ea.id, er.id])
 
 console.log('OK – minden teszt átment')

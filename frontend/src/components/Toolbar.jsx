@@ -72,7 +72,8 @@ const Toolbar = () => {
       <div className='flex flex-col gap-2'>
         <h2 className='text-gray-400 font-bold uppercase'>Érték-blokkok</h2>
         <p className='rounded border-2 border-green-500 bg-green-100 p-1 text-sm'>
-          A set blokk „to” utáni részén, a legördülőből választhatók: érték, isThere, művelet, not.
+          A set blokk „to” utáni részén, a legördülőből választhatók: érték, isThere, safeToDrill, művelet
+          (köztük a <b>@</b> listaelem), not, üres lista, length.
         </p>
       </div>
     </div>

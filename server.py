@@ -1,20 +1,21 @@
 import argparse
+import json
 import os
 import re
 import sys
 from pathlib import Path
 from threading import RLock, Thread
-from core.errors import BuildError
-from flask_api import status
 
 from flask import Flask, jsonify, request, send_from_directory
 # A webview-t és a werkzeug szervert csak a grafikus ágban importáljuk (lásd lent),
 # így a -q mód és a tesztek nem függnek a pywebview-tól.
 
 if __package__:
+    from .core.errors import BuildError, MineScriptRuntimeError
     from .core.interpreter import ProgramRunner
     from .core.praser import ident as RESERVED_IDENTIFIERS
 else:
+    from core.errors import BuildError, MineScriptRuntimeError
     from core.interpreter import ProgramRunner
     from core.praser import ident as RESERVED_IDENTIFIERS
 
@@ -22,15 +23,34 @@ else:
 # PyInstaller-rel épített robot.exe-ben a csomagolt fájlok (frontend/dist) a
 # sys._MEIPASS mappába kerülnek kicsomagolásra.
 BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
-DEFAULT_INPUT = BASE_DIR / "test.txt"  # csak fejlesztéshez, ha nincs megadva input
-DEFAULT_OUTPUT = BASE_DIR / "output_001.txt"
+DEFAULT_OUTPUT_NAME = "output.txt"
 RESERVED = {word.lower() for word in RESERVED_IDENTIFIERS}
-BIN_OPERATORS = {"+", "-", "*", "=", "<>", "<", "<=", ">", ">=", "and", "or"}
+BIN_OPERATORS = {"+", "-", "*", "=", "<>", "<", "<=", ">", ">=", "and", "or", "@"}
+# simpleval-literálok: a 'list' az üres lista (nyelvi kiterjesztés).
+LITERALS = {"true", "false", "list"}
 IDENTIFIER_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*\Z")
-SENSOR_NAMES = ("empty", "wall", "gold")
+# A szenzor kódja megegyezik az isThere paraméterével (3-5 csak isThere_extended mellett hívható).
+SENSOR_CODES = {".": 0, "#": 1, "@": 2, "+": 3, "T": 4, "~": 5}
+SENSOR_NAMES = ("empty", "wall", "gold", "drillable", "support", "station")
+MANUAL_ACTIONS = ("turn", "step", "mine", "drill", "place", "charge")
 TERMINAL_MARKERS = {"EOR", "INSTRUCTION_COUNT_LIMIT_EXCEEDED"}
 # Szerkesztés közben üres mező is lehet; a szöveges nézetben ez a jel áll a helyén.
 EMPTY_PLACEHOLDER = "…"
+
+# A robot beállításai a felületről jönnek (nem a bemeneti fájlból). Ha a felhasználó
+# nem ad meg mást, ezek érvényesek (modositas.txt: akkumulátor 15, minden művelet 1).
+DEFAULT_SETTINGS = {
+    "battery_cap": 15,
+    "drill_usage": 1,
+    "step_usage": 1,
+    "turn_usage": 1,
+    "mine_usage": 1,
+    "isThere_usage": 1,
+    "safeToDrill_usage": 1,
+    "print_usage": 1,
+    "place_usage": 1,
+    "isThere_extended": False,
+}
 
 app = Flask(__name__, static_folder=None)
 
@@ -58,7 +78,7 @@ def _simpleval(value, field, empty=None):
         raise ValueError(f"{field}: szöveges értéket várunk")
     if value == "" and empty is not None:
         return empty.take()
-    if value in ("true", "false"):
+    if value in LITERALS:
         return value
     if value.isascii() and value.isdecimal():
         if int(value) <= 100:
@@ -86,10 +106,14 @@ def _value_to_code(value, field, empty=None):
         return _simpleval(value.get("a"), field + ".a", empty)
     if kind == "isThere":
         return "isThere " + _simpleval(value.get("a"), field + ".a", empty)
+    if kind == "safeToDrill":
+        return "safeToDrill"
+    if kind == "list":
+        return "list"
     if kind == "unop":
-        if value.get("op") != "not":
-            raise ValueError(f"{field}: az egyoperandusú művelet csak 'not' lehet")
-        return "not " + _simpleval(value.get("a"), field + ".a", empty)
+        if value.get("op") not in ("not", "length"):
+            raise ValueError(f"{field}: az egyoperandusú művelet 'not' vagy 'length' lehet")
+        return value["op"] + " " + _simpleval(value.get("a"), field + ".a", empty)
     if kind == "binop":
         operator = value.get("op")
         if operator not in BIN_OPERATORS:
@@ -132,8 +156,20 @@ def ast_to_code(ast, allow_empty=False):
                 row = "turn by " + _simpleval(block.get("arg"), field + ".arg", empty)
             elif kind == "mine":
                 row = "mine here"
+            elif kind == "drill":
+                row = "drill forward"
+            elif kind == "place":
+                row = "place here"
+            elif kind == "charge":
+                row = "charge"
             elif kind == "print":
                 row = "print " + _simpleval(block.get("arg"), field + ".arg", empty)
+            elif kind == "add":
+                row = ("add " + _simpleval(block.get("arg"), field + ".arg", empty)
+                       + " to " + _identifier(block.get("ident"), field + ".ident", empty))
+            elif kind == "remove":
+                row = ("remove " + _identifier(block.get("ident"), field + ".ident", empty)
+                       + " @ " + _simpleval(block.get("arg"), field + ".arg", empty))
             elif kind in ("if", "while"):
                 if control_depth >= 3:
                     raise ValueError("Legfeljebb három egymásba ágyazott vezérlőblokk lehet")
@@ -168,7 +204,10 @@ def _runner_to_ast(statements):
             expression = node["calcvalue"]
             expr_kind = expression["type"]
             if expr_kind == "simple":
-                value = {"kind": "simple", "a": expression["value"]}
+                if expression["value"] in ("safeToDrill", "list"):
+                    value = {"kind": expression["value"]}
+                else:
+                    value = {"kind": "simple", "a": expression["value"]}
             elif expr_kind == "unop":
                 op = expression["operator"]
                 value = ({"kind": "isThere", "a": expression["value"]} if op == "isThere"
@@ -181,6 +220,8 @@ def _runner_to_ast(statements):
             block.update(ident=node["identifier"], value=value)
         elif kind in ("step", "turn", "print"):
             block["arg"] = node["value"]
+        elif kind in ("add", "remove"):
+            block.update(arg=node["value"], ident=node["identifier"])
         elif kind == "if":
             block["cond"] = node["value"]
             block["then"] = _runner_to_ast(node["block"])
@@ -189,7 +230,7 @@ def _runner_to_ast(statements):
         elif kind == "while":
             block["cond"] = node["value"]
             block["body"] = _runner_to_ast(node["block"])
-        elif kind != "mine":
+        elif kind not in ("mine", "drill", "place", "charge"):
             raise ValueError(f"A core ismeretlen parancsot adott vissza: {kind}")
         blocks.append(block)
     return blocks
@@ -201,20 +242,65 @@ def _format_log_entry(parts):
                     for part in parts)
 
 
+def checked_settings(data):
+    """A felületről érkező beállítások ellenőrzése; a hiányzó kulcsok alapértéket kapnak."""
+    if not isinstance(data, dict):
+        raise ValueError("A beállításokat JSON objektumként kell megadni")
+    unknown = sorted(set(data) - set(DEFAULT_SETTINGS))
+    if unknown:
+        raise ValueError(f"Ismeretlen beállítás: {', '.join(unknown)}")
+    settings = dict(DEFAULT_SETTINGS)
+    for key, value in data.items():
+        if key == "isThere_extended":
+            if type(value) is not bool:
+                raise ValueError("Az isThere_extended értéke true vagy false lehet")
+        elif type(value) is not int or value < 0:
+            raise ValueError(f"A(z) {key} értéke nemnegatív egész szám legyen")
+        settings[key] = value
+    if settings["battery_cap"] < 1:
+        raise ValueError("Az akkumulátor kapacitása legalább 1 legyen")
+    return settings
+
+
+def _runner_lines(map_lines, settings, program_lines):
+    # A core a térkép utáni JSON-blokkból olvassa a beállításokat: a felületen
+    # megadott értékeket ide illesztjük be, így a core változatlanul használható.
+    return [*map_lines, json.dumps(settings), *program_lines]
+
+
 class IncompleteProgram(Exception):
     """Futtatás kitöltetlen mezőkkel: a felhasználó hibája, nem a szerveré."""
 
 
 class SimulatorSession:
-    def __init__(self, input_path, output_path):
+    def __init__(self, input_path, output_path, settings):
         self.input_path = Path(input_path).resolve()
         self.output_path = Path(output_path).resolve()
-        raw_lines = self.input_path.read_text(encoding="utf-8").splitlines()
-        row_count = int(raw_lines[0].split()[0])
-        self.map_input = tuple(raw_lines[:row_count + 1])
+        self.settings = dict(settings)
+        try:
+            raw_lines = self.input_path.read_text(encoding="utf-8-sig").splitlines()
+        except UnicodeDecodeError:
+            raise BuildError("SYNTAX_ERROR", "A bemeneti fájl nem UTF-8 kódolású szöveg")
+        if not raw_lines:
+            raise BuildError("SYNTAX_ERROR", "A bemeneti fájl üres")
+        try:
+            rows, cols = (int(n) for n in raw_lines[0].split())
+        except ValueError:
+            raise BuildError("SYNTAX_ERROR", "Hibás térképfejléc (sorok és oszlopok száma)")
+        if len(raw_lines) < rows + 1:
+            raise BuildError("SYNTAX_ERROR", "Hiányzó térképsor")
+        self.map_input = tuple(raw_lines[:rows + 1])
+        program_lines = raw_lines[rows + 1:]
+        if program_lines and program_lines[0].strip().startswith("{"):
+            raise BuildError("SYNTAX_ERROR", "A bemeneti fájlban nem lehet beállítás-blokk: "
+                             "a beállításokat a Beállítások ablakban kell megadni")
+        if any(len(row.strip()) != cols for row in self.map_input[1:]):
+            raise BuildError("SYNTAX_ERROR", "A térkép sorainak hossza nem egyezik a fejléccel")
+        if not any(ch in "<>^v" for row in self.map_input[1:] for ch in row):
+            raise BuildError("SYNTAX_ERROR", "A térképen nincs robot")
         self.total_gold = sum(line.count("@") for line in self.map_input[1:])
-        self.source = "\n".join(raw_lines[row_count + 1:])
-        self.runner = ProgramRunner(raw_lines[:])
+        self.source = "\n".join(program_lines)
+        self.runner = self._new_runner()
         self.ast = _runner_to_ast(self.runner.code)
         self.line_map = self._imported_line_map(self.runner.code)
         self.empty_fields = 0
@@ -222,6 +308,7 @@ class SimulatorSession:
         self.mode = None
         self.last_step = None
         self.error = None
+        self.collapsed = False
 
     @staticmethod
     def _imported_line_map(nodes):
@@ -238,23 +325,34 @@ class SimulatorSession:
                 mapping.update(SimulatorSession._imported_line_map(node["block"]))
         return mapping
 
-    def _new_runner(self):
-        return ProgramRunner([*self.map_input, *self.source.splitlines()])
+    def _new_runner(self, program_lines=None):
+        lines = self.source.splitlines() if program_lines is None else program_lines
+        return ProgramRunner(_runner_lines(self.map_input, self.settings, lines))
 
     def reset(self):
         # Félkész programnál csak a térképet töltjük vissza, a kódot nem kell értelmezni.
-        self.runner = (ProgramRunner(list(self.map_input)) if self.empty_fields
-                       else self._new_runner())
+        self.runner = self._new_runner([]) if self.empty_fields else self._new_runner()
         self.status = "idle"
         self.mode = None
         self.last_step = None
         self.error = None
+        self.collapsed = False
+
+    def apply_settings(self, settings):
+        # Ellenőrzés a core-ral, mielőtt átvennénk; utána a bánya alaphelyzetbe kerül.
+        ProgramRunner(_runner_lines(self.map_input, settings, []))
+        self.settings = dict(settings)
+        self.reset()
+
+    def set_output(self, output_path):
+        self.output_path = _checked_output(output_path, self.input_path)
+        self.stop()  # Egy futás naplója ne kerüljön két fájlba.
 
     def edit_program(self, blocks):
         source, line_map, empty_fields = ast_to_code(blocks, allow_empty=True)
         if empty_fields == 0:
             # Check that the actual core accepts the generated text before committing.
-            ProgramRunner([*self.map_input, *source.splitlines()])
+            self._new_runner(source.splitlines())
         self.ast = blocks
         self.source = source
         self.line_map = line_map
@@ -276,6 +374,7 @@ class SimulatorSession:
         self.mode = mode
         self.last_step = None
         self.error = None
+        self.collapsed = False
 
     def stop(self):
         if self.status == "running":
@@ -312,6 +411,7 @@ class SimulatorSession:
             if error:
                 self.status = "error"
                 self.error = error
+                self.collapsed = error == "E_MINE_COLLAPSE"
                 # The core emits EOR only on the subsequent call after a runtime error.
                 # Finish the file now, without requiring a second user-visible step.
                 end = self.runner.next_step()
@@ -322,37 +422,74 @@ class SimulatorSession:
 
     def manual(self, action, value):
         self.stop()  # Abort program execution; never append to its output log.
+        # A beomlott bánya használhatatlan: a visszaállításig semmilyen művelet nem megy.
+        if self.collapsed:
+            return {"ok": False, "error": "E_MINE_COLLAPSE"}
         world = self.runner.map
-        if action == "turn":
-            world.turn(value % 4)
-            return {"ok": True, "error": None}
-        if action == "step":
-            ok = world.move(value)
-            return {"ok": ok, "error": None if ok else "E_BEDROCK_HIT"}
-        if action == "mine":
-            ok = world.mineHere()
-            return {"ok": ok, "error": None if ok else "E_NO_GOLD"}
-        raise ValueError("Ismeretlen kézi művelet")
+        try:
+            # Ugyanazok a core-műveletek, mint a programban: ugyanúgy fogyasztanak
+            # energiát, és ugyanúgy beomolhat a bánya.
+            if action == "turn":
+                world.turn(value % 4)
+            elif action == "step":
+                world.move(value)
+            elif action == "mine":
+                world.mineHere()
+            elif action == "drill":
+                world.drill()
+            elif action == "place":
+                world.place()
+            elif action == "charge":
+                world.charge()
+            else:
+                raise ValueError("Ismeretlen kézi művelet")
+        except MineScriptRuntimeError as err:
+            if err.code == "E_MINE_COLLAPSE":
+                self.collapsed = True
+            return {"ok": False, "error": err.code}
+        return {"ok": True, "error": None}
+
+    @staticmethod
+    def _safe_to_drill(world, x, y):
+        # A core beomlás-ellenőrzése, de energiafogyasztás nélkül (csak kijelzéshez).
+        try:
+            world._check_collapse(x, y)
+        except MineScriptRuntimeError:
+            return False
+        return True
 
     def state(self):
         world = self.runner.map
         x, y = world.robot_x, world.robot_y
         next_x, next_y = x + world.robot_dir[0], y + world.robot_dir[1]
-        char = (world.map[next_y][next_x]
-                if 0 <= next_x < world.x and 0 <= next_y < world.y else "#")
-        sensor_code = {".": 0, "#": 1, "@": 2}[char]
+        inside = 0 <= next_x < world.x and 0 <= next_y < world.y
+        char = world.map[next_y][next_x] if inside else "#"
+        sensor_code = SENSOR_CODES[char]
         collected = world.player_gold_collected
+        energy = max(0, world.energy)
         return {
+            "loaded": True,
+            "files": {"input": str(self.input_path), "output": str(self.output_path)},
             "map": {"width": world.x, "height": world.y,
-                    # A teljes, aktuális térkép ('.', '#', '@'; a kibányászott arany már '.').
+                    # A teljes, aktuális térkép ('.', '#', '@', '+', 'T', '~').
                     "tiles": ["".join(row) for row in world.map],
                     # Felfedezett-e a mező: ahol a robot járt, vagy amire isThere hívódott.
                     "discovered": [[cell != "?" for cell in row] for row in world.discovered],
                     # Régi formátum: csak a felfedezett mezők, a többi '?'.
                     "visible": ["".join(row) for row in world.get_map()]},
             "robot": {"x": x, "y": y, "direction": world.get_robot_dir(),
-                      "on_gold": world.map[y][x] == "@"},
-            "sensor": {"code": sensor_code, "type": SENSOR_NAMES[sensor_code]},
+                      "on_gold": world.map[y][x] == "@",
+                      "on_station": world.map[y][x] == "~",
+                      "destroyed": self.collapsed},
+            # A kijelzés nem fogyaszt energiát és nem tesz felfedezetté mezőt.
+            "sensor": {"code": sensor_code, "type": SENSOR_NAMES[sensor_code],
+                       "safe_to_drill": (self._safe_to_drill(world, next_x, next_y)
+                                         if char == "+" else None)},
+            "energy": {"currentenergy": energy, "maxenergy": world.energy_capacity},
+            "current_energy": energy,
+            "max_energy": world.energy_capacity,
+            "settings": dict(self.settings),
+            "mine": {"collapsed": self.collapsed},
             "gold": {"collected": collected, "remaining": self.total_gold - collected,
                      "total": self.total_gold},
             "console": world.console[:],
@@ -369,29 +506,121 @@ class SimulatorSession:
 
 
 session = None
+# A felületen megadott beállítások; minden betöltött bemenetre érvényesek.
+current_settings = dict(DEFAULT_SETTINGS)
+
+
+class NotLoaded(Exception):
+    """Még nincs betöltött bemenet: a felhasználó a felületen választja ki."""
+
+
+@app.errorhandler(NotLoaded)
+def _not_loaded(_exc):
+    return _error("Nincs betöltött bánya: előbb nyiss meg egy bemeneti fájlt", 409)
 
 
 def _current_session():
-    # -q must not depend on a bundled default input file.  Flask imports and
-    # development launches can still use the sample file if no paths are set.
-    global session
     if session is None:
-        session = SimulatorSession(DEFAULT_INPUT, DEFAULT_OUTPUT)
+        raise NotLoaded()
     return session
 
 
-def configure(input_path, output_path):
-    """Select the input and log passed by the desktop launcher/CLI."""
+class OutputPathError(ValueError):
+    """Rossz naplóhely (nem a bemenet hibája)."""
+
+
+def _checked_output(output_path, input_path):
+    path = Path(output_path).resolve()
+    if path.is_dir():
+        raise OutputPathError("A napló helye egy mappa, nem fájl")
+    if not path.parent.is_dir():
+        raise OutputPathError("A napló mappája nem létezik")
+    if path == Path(input_path).resolve():
+        raise OutputPathError("A napló nem írhatja felül a bemeneti fájlt")
+    return path
+
+
+def configure(input_path, output_path=None):
+    """Betölti a bemenetet; a napló alapértelmezett helye a korábbi, vagy a bemenet mellett."""
     global session
-    new_session = SimulatorSession(input_path, output_path)
+    if output_path is None:
+        output_path = (session.output_path if session is not None
+                       else Path(input_path).resolve().parent / DEFAULT_OUTPUT_NAME)
+    output_path = _checked_output(output_path, input_path)
+    new_session = SimulatorSession(input_path, output_path, current_settings)
     with _lock:
         session = new_session
+    return new_session
+
+
+def _not_loaded_state():
+    return {"loaded": False, "files": {"input": None, "output": None},
+            "settings": dict(current_settings)}
 
 
 @app.get("/api/state")
 def get_state():
     with _lock:
-        return jsonify(_current_session().state())
+        if session is None:
+            return jsonify(_not_loaded_state())
+        return jsonify(session.state())
+
+
+@app.post("/api/load")
+def load_files():
+    """Bemenet betöltése és/vagy a napló helyének megadása: {"input": ..., "output": ...}."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _error("JSON objektumot várunk: {\"input\": ..., \"output\": ...}")
+    input_path, output_path = data.get("input"), data.get("output")
+    for value, name in ((input_path, "input"), (output_path, "output")):
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            return _error(f"Érvénytelen útvonal: {name}")
+    if not input_path and not output_path:
+        return _error("Add meg a bemeneti fájlt vagy a napló helyét")
+    with _lock:
+        try:
+            if input_path:
+                configure(input_path, output_path)
+            else:
+                _current_session().set_output(output_path)
+        except BuildError as err:
+            return jsonify({"error": f"Hibás bemenet: {err.msg}", "code": err.code}), 400
+        except OutputPathError as err:
+            return _error(str(err))
+        except FileNotFoundError:
+            return _error("A bemeneti fájl nem található")
+        except OSError as err:
+            return _error(f"A fájl nem olvasható: {err.strerror or err}")
+        except (ValueError, TypeError, KeyError, IndexError) as err:
+            return _error(f"Hibás bemenet: {err}")
+        return jsonify(session.state())
+
+
+@app.get("/api/settings")
+def get_settings():
+    with _lock:
+        return jsonify({"settings": dict(current_settings), "defaults": dict(DEFAULT_SETTINGS)})
+
+
+@app.put("/api/settings")
+def put_settings():
+    """A Beállítások ablak JSON-ja; a hiányzó kulcsok alapértéket kapnak."""
+    global current_settings
+    data = request.get_json(silent=True)
+    try:
+        settings = checked_settings(data.get("settings") if isinstance(data, dict) and "settings" in data
+                                    else data)
+    except ValueError as err:
+        return _error(str(err))
+    with _lock:
+        if session is not None:
+            try:
+                session.apply_settings(settings)
+            except BuildError as err:
+                return _error(f"Hibás beállítás: {err.msg}")
+        current_settings = settings
+        return jsonify(session.state() if session is not None else _not_loaded_state())
 
 
 @app.put("/api/program")
@@ -401,6 +630,8 @@ def update_program():
     with _lock:
         try:
             _current_session().edit_program(blocks)
+        except BuildError as err:
+            return _error(err.msg)
         except (ValueError, TypeError, KeyError, IndexError) as exc:
             return _error(str(exc))
         return jsonify(_current_session().state())
@@ -416,6 +647,8 @@ def start_run():
             _current_session().start(data["mode"])
         except IncompleteProgram as exc:
             return _error(str(exc), 409)
+        except BuildError as err:
+            return _error(err.msg)
         except (OSError, ValueError, TypeError, IndexError) as exc:
             return _error(f"Nem sikerült elindítani a futást: {exc}", 500)
         return jsonify(_current_session().state())
@@ -444,11 +677,11 @@ def stop_run():
 @app.post("/api/manual")
 def manual():
     data = request.get_json(silent=True)
-    if not isinstance(data, dict) or data.get("action") not in ("turn", "step", "mine"):
+    if not isinstance(data, dict) or data.get("action") not in MANUAL_ACTIONS:
         return _error("Ismeretlen kézi művelet")
     action = data["action"]
     value = data.get("value", 1)
-    if action != "mine" and (type(value) is not int or value < 0):
+    if action in ("turn", "step") and (type(value) is not int or value < 0):
         return _error("A 'value' nemnegatív egész szám kell legyen")
     with _lock:
         result = _current_session().manual(action, value)
@@ -461,9 +694,10 @@ def reset():
         _current_session().reset()
         return jsonify(_current_session().state())
 
+
 @app.get("/api/log")
 def get_log():
-    """A naplófájl aktuális tartalma (a videóban a „Napló megnyitása” gombhoz)."""
+    """A naplófájl aktuális tartalma (a „Napló megnyitása” gombhoz)."""
     with _lock:
         path = _current_session().output_path
         try:
@@ -499,9 +733,11 @@ def serve_ui(asset=""):
     return send_from_directory(dist, "index.html")
 
 
-def run_quiet(input_path, output_path):
-    """Noninteractive contest mode using exactly the same core and log format."""
-    runner = ProgramRunner(Path(input_path).read_text(encoding="utf-8").splitlines())
+def run_quiet(input_path, output_path, settings=None):
+    """Csendes futtatás belső teszteléshez, ugyanazzal a core-ral és naplóformátummal."""
+    with _lock:
+        session_ = SimulatorSession(input_path, output_path, settings or current_settings)
+    runner = session_.runner
     with Path(output_path).open("w", encoding="utf-8") as out:
         while True:
             result = runner.next_step()
@@ -544,11 +780,41 @@ def _choose_gui():
     return None if _has_webview2() else "qt"
 
 
-def run_gui():
+FILE_TYPES = ("Szövegfájl (*.txt)", "Minden fájl (*.*)")
+
+
+class DesktopApi:
+    """A felület JavaScriptből hívja (window.pywebview.api).
+
+    A fájlválasztók a pywebview saját, programon belüli párbeszédablakai:
+    nem indítanak külön alkalmazást. Mégsem esetén None.
+    """
+
+    def pick_input(self):
+        import webview
+        directory = str(session.input_path.parent) if session is not None else ""
+        result = webview.windows[0].create_file_dialog(
+            webview.FileDialog.OPEN, directory=directory, file_types=FILE_TYPES)
+        return result[0] if result else None
+
+    def pick_output(self):
+        import webview
+        if session is not None:
+            directory, name = str(session.output_path.parent), session.output_path.name
+        else:
+            directory, name = "", DEFAULT_OUTPUT_NAME
+        result = webview.windows[0].create_file_dialog(
+            webview.FileDialog.SAVE, directory=directory, save_filename=name, file_types=FILE_TYPES)
+        return result[0] if result else None
+
+
+def run_gui(input_path=None, output_path=None):
     import webview
     from werkzeug.serving import make_server
 
-    load()
+    # Paraméter nélkül üresen indul; a bemenetet a felületen kell kiválasztani.
+    if input_path is not None:
+        configure(input_path, output_path)
 
     # 0-s port: az operációs rendszer ad egy szabad portot, így nem ütközünk más programmal.
     server = make_server("127.0.0.1", 0, app)
@@ -557,7 +823,7 @@ def run_gui():
 
     # A felület a Python-alkalmazáson belül, beágyazott webnézetben jelenik meg
     # (a verseny szabálya: külső böngészőt / alkalmazást nem indíthatunk).
-    webview.create_window("Robotszimulátor – MineScript IDE", url,
+    webview.create_window("Robotszimulátor – MineScript IDE", url, js_api=DesktopApi(),
                           width=1600, height=950, min_size=(1100, 700), maximized=True)
     gui = _choose_gui()
     try:
@@ -571,27 +837,17 @@ def run_gui():
     finally:
         server.shutdown()
 
-@app.post('/api/load')
-def load():
-    inputpath = request.form.get('input')
-    outputpath = request.form.get('output')
-
-    try:
-        configure(inputpath,outputpath)
-    except BuildError as error:
-
-        return error.msg
-
-    return {inputpath,outputpath}, status.HTTP_200_OK
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="robot", description="MineScript IDE (Flask + pywebview)")
-    parser.add_argument("-q", action="store_true", help="Csendes, automatikus futtatás")
-    parser.add_argument("input", type=Path, help="Térkép és MineScript forráskód")
-    parser.add_argument("output", type=Path, help="Futási naplófájl")
+    parser.add_argument("-q", action="store_true",
+                        help="Csendes futtatás belső teszteléshez (bemenet és napló kötelező)")
+    parser.add_argument("input", type=Path, nargs="?", help="Térkép és MineScript forráskód (elhagyható)")
+    parser.add_argument("output", type=Path, nargs="?", help="Futási naplófájl (elhagyható)")
     args = parser.parse_args()
     if args.q:
+        if args.input is None or args.output is None:
+            parser.error("a -q módhoz bemeneti és kimeneti fájl is kell")
         run_quiet(args.input, args.output)
     else:
         run_gui(args.input, args.output)

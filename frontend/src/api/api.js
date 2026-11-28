@@ -54,3 +54,45 @@ export async function resetWorld() {
 export async function getLog() {
   return call('GET', '/api/log')
 }
+
+export async function loadFiles(paths) {
+  return normalize(await call('POST', '/api/load', paths))
+}
+
+export async function getSettings() {
+  return call('GET', '/api/settings')
+}
+
+export async function putSettings(settings) {
+  return normalize(await call('PUT', '/api/settings', { settings }))
+}
+
+let desktop
+function desktopApi() {
+  if (desktop !== undefined) return desktop
+  desktop = new Promise((resolve) => {
+    const ready = () => window.pywebview?.api?.pick_input ? window.pywebview.api : null
+    if (ready()) return resolve(ready())
+    window.addEventListener('pywebviewready', () => resolve(ready()), { once: true })
+    setTimeout(() => resolve(ready()), 2000)
+  })
+  return desktop
+}
+
+async function pickPath(method, question) {
+  const api = await desktopApi()
+  if (api) return (await api[method]()) || null
+  return window.prompt(question)?.trim() || null
+}
+
+export function pickInput() {
+  return pickPath('pick_input', 'A bemeneti fájl teljes elérési útja:')
+}
+
+export function pickOutput() {
+  return pickPath('pick_output', 'A naplófájl teljes elérési útja:')
+}
+
+export function fileName(path) {
+  return path ? path.split(/[\\/]/).pop() : ''
+}

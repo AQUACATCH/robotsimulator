@@ -1,5 +1,9 @@
 import { useEffect, useRef } from 'react'
 import { useSim } from '../sim/SimContext.jsx'
+import { formatValue, typeName } from '../sim/messages.js'
+
+const VALUE_CLS = (value) =>
+  Array.isArray(value) ? 'text-teal-700' : typeof value === 'boolean' ? 'text-purple-700' : 'text-blue-700'
 
 export function NoticeBar() {
   const { notice, setNotice } = useSim()
@@ -35,7 +39,7 @@ export function ConsolePanel() {
     <Panel title='Konzol (print kimenete)'>
       <div className='h-32 overflow-auto rounded bg-gray-900 p-2 font-mono text-sm text-green-300'>
         {lines.length === 0 && <span className='text-gray-500'>Még nincs kimenet.</span>}
-        {lines.map((l, i) => <div key={i}>{String(l)}</div>)}
+        {lines.map((l, i) => <div key={i}>{formatValue(l)}</div>)}
         <div ref={endRef} />
       </div>
     </Panel>
@@ -59,8 +63,8 @@ export function VariablesPanel() {
               {vars.map(([name, value]) => (
                 <tr key={name} className='border-t border-gray-100'>
                   <td className='py-0.5'>{name}</td>
-                  <td className='font-sans text-gray-500'>{typeof value === 'boolean' ? 'logikai' : 'egész'}</td>
-                  <td className={typeof value === 'boolean' ? 'text-purple-700' : 'text-blue-700'}>{String(value)}</td>
+                  <td className='font-sans text-gray-500'>{typeName(value)}</td>
+                  <td className={`break-all ${VALUE_CLS(value)}`}>{formatValue(value)}</td>
                 </tr>
               ))}
             </tbody>

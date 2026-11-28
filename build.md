@@ -1,29 +1,49 @@
-# Build – Robotszimulátor (MineScript IDE)
+# Build – Robotszimulátor (MineScript IDE), II. forduló
 
-## Platform és eszközök
+## Platform és fejlesztői környezet
 
 | | Verzió |
 | --- | --- |
-| Operációs rendszer | Windows 11 Home (10.0.26200), x64 |
-| Python | 3.15.0 |
-| PyInstaller | 6.22.3 (pyinstaller-hooks-contrib 2026.9) |
-| Node.js | 24.13.1 |
-| pnpm | 12.16.1 |
+| Operációs rendszer | Windows 11 Home 10.0.26200, 64 bites |
+| Programozási nyelv | Python 3.15.0 (core, interpreter, szerver) |
+| Felület | React 19, Vite 8, Tailwind CSS 4; Node.js 24.13.1, pnpm 12.16.1 |
+| Beágyazott webnézet | pywebview 6.2.1: Microsoft Edge WebView2, tartalékként Qt WebEngine (PyQt6 6.12.0) |
+| Futtatható változat | PyInstaller 6.22.3 |
 
-Python-csomagok: lásd `requirements.txt` (Flask 3.1.3, pywebview 6.2.1, PyQt6 6.12.0 + PyQt6-WebEngine 6.140.0 stb.).
-Frontend: React 19, Vite 8, Tailwind CSS 4 (lásd `frontend/package.json` és `frontend/pnpm-lock.yaml`).
+A Python-csomagok pontos verziói a `requirements.txt` (futáshoz) és a `requirements-build.txt`
+(fordításhoz) fájlban, a JavaScript-csomagoké a `frontend/pnpm-lock.yaml` fájlban vannak.
 
-## Felépítés
+## Tesztkonfiguráció
 
-- `core/` – a MineScript nyelv motorja Pythonban: beolvasás, parser, interpreter, térkép.
-- `server.py` – a belépési pont. Flask API a core körül; grafikus módban a felületet
-  pywebview-val, a Python-alkalmazáson belüli beágyazott webnézetben jeleníti meg
-  (külső böngészőt nem indít). `-q` kapcsolóval csendes módban fut.
-- `frontend/` – a felület (React). A buildelt változat (`frontend/dist`) bekerül az exe-be.
+- ASUS TUF Gaming F15 (FX506LU) laptop: Intel Core i7-10870H, 16 GB RAM, SSD
+- Windows 11 Home 10.0.26200, Microsoft Edge WebView2 Runtime 158.0.4370.45
+- A felületet GPU nélküli, szoftveres megjelenítéssel is kipróbáltuk (`--disable-gpu`): egy 20×30-as
+  bányán, a leggyorsabb futtatás közben is 60 fps volt, a leghosszabb képkocka 17 ms.
+- A build lépéseit egy üres mappába kicsomagolt `project.zip`-ből is végigcsináltuk; a lefordított
+  program a 256 I. fordulós tesztbemenetre bájtra azonos naplót ad.
 
-## Build lépései (PowerShell, a projekt gyökerében)
+## Előfeltételek egy üres gépen
 
-1. Frontend:
+1. Windows 10 vagy 11, 64 bites.
+2. **Python 3.15.0** (https://www.python.org/downloads/, „Windows installer (64-bit)”).
+   Telepítéskor maradjon bekapcsolva a „py launcher”, és pipáljuk be az „Add python.exe to PATH” lehetőséget.
+3. **Node.js 24.13.1** (https://nodejs.org/, Windows Installer, x64).
+4. **pnpm 12.16.1**, a Node.js telepítése után egy új PowerShell-ablakban:
+
+   ```powershell
+   npm install -g pnpm@12.16.1
+   ```
+
+5. Internetkapcsolat a fordításhoz (a csomagok letöltéséhez). A lefordított program internet nélkül fut.
+
+Mást nem kell telepíteni. A Microsoft Edge WebView2 Runtime Windows 11-en a rendszer része; ha egy gépen
+hiányzik, a program a beépített Qt-motorral jeleníti meg ugyanazt a felületet.
+
+## Fordítás
+
+PowerShellben, a kicsomagolt programkönyvtár gyökerében (ahol ez a fájl van):
+
+1. Felület:
 
    ```powershell
    cd frontend
@@ -35,47 +55,45 @@ Frontend: React 19, Vite 8, Tailwind CSS 4 (lásd `frontend/package.json` és `f
 2. Python-környezet:
 
    ```powershell
-   python -m venv .venv
-   .venv\Scripts\Activate.ps1
-   pip install -r requirements.txt pyinstaller==6.22.3
+   py -3.15 -m venv .venv
+   .venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-build.txt
    ```
 
-3. Exe készítése:
+3. Futtatható változat:
 
    ```powershell
-   pyinstaller --noconfirm --clean --onedir --name robot --contents-directory robot_lib `
-     --distpath build/dist --workpath build/work `
-     --add-data "frontend/dist;frontend/dist" server.py
+   .venv\Scripts\pyinstaller.exe --noconfirm --clean robot.spec
    ```
 
-   (Ugyanezt rögzíti a `robot.spec` is: `pyinstaller --noconfirm --clean robot.spec`.)
+Az eredmény a `dist\robot` mappa: benne a `robot.exe` és mellette a `robot_lib` mappa. A kettőt csak
+együtt lehet áthelyezni.
 
-4. Az eredmény áthelyezése a projekt gyökerébe:
+## Indítás
 
-   ```powershell
-   Move-Item build\dist\robot\robot.exe .
-   Move-Item build\dist\robot\robot_lib .
-   ```
-
-A `robot.exe` mellett mindig ott kell lennie a `robot_lib` mappának.
-
-## Futtatás
-
-```
-robot.exe input_001.txt output_001.txt        (grafikus felület)
-robot.exe -q input_001.txt output_001.txt     (csendes mód)
-run_all.bat [bemeneti mappa] [kimeneti mappa] (minden input_XXX.txt -> output_XXX.txt)
+```powershell
+dist\robot\robot.exe
 ```
 
-Pythonból, build nélkül: `python server.py [-q] input.txt output.txt`.
+(vagy dupla kattintás a `robot.exe`-n). A program üresen indul: a „Bemenet megnyitása…” gombbal kell
+kiválasztani a bemeneti fájlt. A napló alapértelmezés szerint a bemenet mellé kerül `output.txt` néven;
+a „Napló helye…” gombbal bármikor máshová tehető.
+
+Elhagyható paraméterek (teszteléshez):
+
+- `robot.exe bemenet.txt naplo.txt`: induláskor betölti a bemenetet.
+- `robot.exe -q bemenet.txt naplo.txt`: csendes mód ablak nélkül, az I. fordulós tesztekhez.
+- `run_all.bat mappa`: a mappa összes `input_XXX.txt` fájlját csendes módban futtatja.
+
+Fejlesztés közben fordítás nélkül is indítható (előtte a felületet buildelni kell):
+`.venv\Scripts\python.exe server.py`.
 
 ## Megjegyzések
 
-- **Mappás (onedir) build.** Egyfájlos (`--onefile`) exe-nél minden indításkor ki kell
-  csomagolni a ~210 MB-ot (a Qt WebEngine miatt), ez indításonként ~8,5 s volt. A mappás
-  változat ~0,4 s alatt indul; 210 bemenet `run_all.bat`-tal ~90 s alatt fut le.
-- **Grafikus motor.** Ha a gépen van Microsoft Edge WebView2 Runtime (Windows 11-en
-  alapból van), a pywebview EdgeChromium motort használ. Ha nincs, a beépített Qt
-  (PyQt6 WebEngine) motorra vált. A Qt a `ROBOT_GUI=qt` környezeti változóval kényszeríthető.
-- **Szabad port.** A beágyazott szerver az operációs rendszertől kér szabad portot
-  (`127.0.0.1`), így nem ütközik más programmal.
+- **Mappás build.** Egyfájlos exe-nél minden indításkor ki kellene csomagolni a kb. 210 MB-os
+  Qt WebEngine-t, ami indításonként 8–9 másodperc volt. A mappás változat ablaka kb. 2,5 s alatt megjelenik.
+- **Méret.** Fordítás után a programkönyvtár kb. 1,2 GB: ebből a `.venv` 0,6 GB, a `dist` 0,5 GB,
+  a `frontend\node_modules` 0,1 GB.
+- **Beágyazott felület.** A felület a Python-programon belül, beágyazott webnézetben jelenik meg, külön
+  böngészőt nem indít. A fájlválasztók is a program saját ablakai.
+- **Szabad port.** A beágyazott szerver az operációs rendszertől kér szabad portot a `127.0.0.1`
+  címen, így nem ütközik más programmal.

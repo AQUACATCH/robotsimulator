@@ -122,6 +122,7 @@ export default function useSimulator({ beforeRun, onLine, onClearLine }) {
   }
 
   function manualAction(action) {
+    if (!world?.loaded) return Promise.resolve()
     const wasRunning = world?.execution.running
     cancelLoop()
     manualQueue.current = manualQueue.current.then(() => doManual(action, wasRunning))
@@ -134,8 +135,10 @@ export default function useSimulator({ beforeRun, onLine, onClearLine }) {
       apply(s)
       onClearLine()
       const err = s.manual_result?.error
-      if (err) setNotice({ kind: 'warn', text: MANUAL_TEXT[err] ?? err })
+      if (err === 'E_MINE_COLLAPSE') setNotice({ kind: 'error', text: MANUAL_TEXT[err] })
+      else if (err) setNotice({ kind: 'warn', text: MANUAL_TEXT[err] ?? err })
       else if (wasRunning) setNotice({ kind: 'info', text: 'Kézi vezérlés: a program futása megszakadt.' })
+      else if (action === 'charge') setNotice({ kind: 'info', text: 'Az akkumulátor feltöltve.' })
       else setNotice(null)
     } catch (e) {
       setNotice({ kind: 'error', text: e.message })
@@ -156,9 +159,13 @@ export default function useSimulator({ beforeRun, onLine, onClearLine }) {
     function onKey(e) {
       const tag = e.target.tagName
       if (['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(tag) || e.ctrlKey || e.altKey || e.metaKey) return
+      const key = e.key.toLowerCase()
       if (e.key === 'ArrowUp') { e.preventDefault(); manualAction('step') }
       else if (e.key === 'ArrowLeft') { e.preventDefault(); manualAction('turn') }
-      else if (e.key === 'm' || e.key === 'M') { e.preventDefault(); manualAction('mine') }
+      else if (key === 'm') { e.preventDefault(); manualAction('mine') }
+      else if (key === 'd') { e.preventDefault(); manualAction('drill') }
+      else if (key === 't') { e.preventDefault(); manualAction('place') }
+      else if (key === 'c') { e.preventDefault(); manualAction('charge') }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -168,6 +175,8 @@ export default function useSimulator({ beforeRun, onLine, onClearLine }) {
   return {
     world, apply, speed, changeSpeed, autoplay, notice, setNotice, log,
     start, step, resume, stop, reset, manualAction, openLog, closeLog, refreshLog,
+    halt: cancelLoop,
+    loaded: !!world?.loaded,
     running: !!ex?.running,
     debugging: !!ex?.running && ex.mode === 'debug',
   }

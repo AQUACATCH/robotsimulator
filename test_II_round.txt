@@ -1,0 +1,60 @@
+7 14
+##############
+#####..#######
+#>+++.+.T+@..#
+#####..#######
+#..+@..+++..@#
+#.T....+..~..#
+##############
+set furasok to list
+set arany to 0
+set tamaszok to 0
+set lepes to 0
+set megy to true
+while megy
+  set ko to isThere 3
+  set kincs to isThere 2
+  set ures to isThere 0
+  set tamasz to isThere 4
+  set biztos to safeToDrill
+  set furhat to ko and biztos
+  set veszelyes to not biztos
+  set veszelyes to veszelyes and ko
+  set szabad to ures or tamasz
+  set lepes to lepes + 1
+  if furhat
+    drill forward
+    add lepes to furasok
+  if veszelyes
+    place here
+    set tamaszok to tamaszok + 1
+  if kincs
+    step forward 1
+    mine here
+    set arany to arany + 1
+  if szabad
+    step forward 1
+  set lehet to ko or kincs
+  set lehet to lehet or szabad
+  set megy to lehet
+turn by 2
+set megy to true
+while megy
+  set allomas to isThere 5
+  set tamasz to isThere 4
+  set ures to isThere 0
+  set mehet to tamasz or ures
+  if mehet
+    step forward 1
+  if allomas
+    step forward 1
+    charge
+  set megy to mehet
+set db to length furasok
+set elso to furasok @ 0
+remove furasok @ 0
+print arany
+print tamaszok
+print db
+print elso
+print furasok

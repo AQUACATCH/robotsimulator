@@ -1,3 +1,6 @@
+import { useState } from 'react'
+import { fileName } from '../api/api.js'
+import SettingsDialog from './SettingsDialog.jsx'
 import { useEditor } from '../editor/EditorContext.jsx'
 import { useSim } from '../sim/SimContext.jsx'
 import { statusText } from '../sim/messages.js'
@@ -12,9 +15,11 @@ function Btn({ onClick, disabled, title, cls = 'border border-gray-300 bg-white 
 }
 
 const MyHeader = () => {
-  const { apiError } = useEditor()
+  const { apiError, openInput, chooseOutput } = useEditor()
   const sim = useSim()
   const ex = sim.world?.execution
+  const files = sim.world?.files
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   return (
     <div className='flex flex-wrap items-center justify-between gap-3 bg-white px-4 py-3 shadow-md'>
@@ -23,11 +28,27 @@ const MyHeader = () => {
       </h1>
 
       <div className='flex flex-wrap items-center gap-2'>
-        <Btn cls='bg-green-600 text-white hover:bg-green-700' onClick={() => sim.start('run')}
+        <Btn onClick={openInput}
+          title='Bemeneti fájl (térkép, beállítások, program) kiválasztása és betöltése.'>
+          📂 Bemenet megnyitása…
+        </Btn>
+        <Btn onClick={chooseOutput} disabled={!sim.loaded}
+          title='Hova írja a program a futási naplót. A következő futtatás ide kerül.'>
+          📝 Napló helye…
+        </Btn>
+        <Btn onClick={() => setSettingsOpen(true)}
+          title='A robot akkumulátora, a műveletek energiaigénye és az isThere 3–5 engedélyezése.'>
+          ⚙ Beállítások
+        </Btn>
+        {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
+      </div>
+
+      <div className='flex flex-wrap items-center gap-2'>
+        <Btn cls='bg-green-600 text-white hover:bg-green-700' onClick={() => sim.start('run')} disabled={!sim.loaded}
           title='A program futtatása nyomkövetés nélkül, lassítva. A térkép és a robot előtte alaphelyzetbe kerül.'>
           ▶ Futtatás
         </Btn>
-        <Btn cls='bg-indigo-600 text-white hover:bg-indigo-700' onClick={() => sim.start('debug')}
+        <Btn cls='bg-indigo-600 text-white hover:bg-indigo-700' onClick={() => sim.start('debug')} disabled={!sim.loaded}
           title='Nyomkövetés: a programot soronként, a Lépés gombbal hajthatod végre, közben látod a változókat.'>
           ⏯ Nyomkövetés
         </Btn>
@@ -43,7 +64,7 @@ const MyHeader = () => {
           title='A futó program leállítása.'>
           ■ Leállítás
         </Btn>
-        <Btn onClick={sim.reset}
+        <Btn onClick={sim.reset} disabled={!sim.loaded}
           title='A térkép és a robot visszaállítása a kezdőállapotba.'>
           ⟲ Alaphelyzet
         </Btn>
@@ -56,16 +77,21 @@ const MyHeader = () => {
           <span className='w-14 tabular-nums'>{sim.speed} ms</span>
         </label>
 
-        <Btn onClick={sim.openLog} title='A naplófájl aktuális tartalmának megjelenítése.'>
+        <Btn onClick={sim.openLog} disabled={!sim.loaded} title='A naplófájl aktuális tartalmának megjelenítése.'>
           📄 Napló megnyitása
         </Btn>
       </div>
 
       <div className='flex w-full flex-wrap items-center gap-3 text-sm'>
         <span className='rounded bg-gray-100 px-2 py-0.5 text-gray-700'>
-          Állapot: <b>{statusText(ex)}</b>
+          Állapot: <b>{sim.loaded ? statusText(ex) : 'Nincs betöltött bánya'}</b>
           {ex && ex.instruction_count > 0 && <span className='text-gray-500'> · {ex.instruction_count} végrehajtott sor</span>}
         </span>
+        {files?.input && (
+          <span className='text-gray-600' title={`Bemenet: ${files.input}\nNapló: ${files.output}`}>
+            Bemenet: <b>{fileName(files.input)}</b> · Napló: <b>{fileName(files.output)}</b>
+          </span>
+        )}
         {apiError && <span className='text-red-600'>Backend hiba: {apiError}</span>}
       </div>
     </div>

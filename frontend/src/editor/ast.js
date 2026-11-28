@@ -1,7 +1,12 @@
 export const KEYWORDS = new Set([
   'and', 'by', 'else', 'false', 'forward', 'here', 'if', 'isthere', 'mine',
   'not', 'or', 'print', 'set', 'step', 'to', 'true', 'turn', 'while',
+  'drill', 'place', 'charge', 'safetodrill', 'add', 'list', 'length', 'remove',
 ])
+
+export const LITERALS = new Set(['true', 'false', 'list'])
+
+export const NO_FIELD_TYPES = new Set(['mine', 'drill', 'place', 'charge'])
 
 const IDENT_RE = /^[A-Za-z][A-Za-z0-9]*$/
 const NUMBER_RE = /^[0-9]+$/
@@ -17,7 +22,7 @@ export function identError(s) {
 
 export function simplevalError(s) {
   if (s === '') return null
-  if (s === 'true' || s === 'false') return null
+  if (LITERALS.has(s)) return null
   if (NUMBER_RE.test(s)) {
     return Number(s) <= 100 ? null : 'A szám 0 és 100 között lehet.'
   }
@@ -38,6 +43,11 @@ export function createBlock(kind) {
     case 'step': return { id, type: 'step', arg: '' }
     case 'turn': return { id, type: 'turn', arg: '' }
     case 'mine': return { id, type: 'mine' }
+    case 'drill': return { id, type: 'drill' }
+    case 'place': return { id, type: 'place' }
+    case 'charge': return { id, type: 'charge' }
+    case 'add': return { id, type: 'add', arg: '', ident: '' }
+    case 'remove': return { id, type: 'remove', ident: '', arg: '' }
     case 'print': return { id, type: 'print', arg: '' }
     case 'set': return { id, type: 'set', ident: '', value: { kind: 'simple', a: '' } }
     case 'if': return { id, type: 'if', cond: '', then: [], else: null }
@@ -133,9 +143,11 @@ export function emptyFieldIds(program) {
       if ('arg' in n) fields.push(n.arg)
       if ('cond' in n) fields.push(n.cond)
       if (n.type === 'set') {
-        fields.push(n.ident, n.value.a)
+        fields.push(n.ident)
+        if ('a' in n.value) fields.push(n.value.a)
         if (n.value.kind === 'binop') fields.push(n.value.b)
       }
+      if (n.type === 'add' || n.type === 'remove') fields.push(n.ident)
       if (fields.some((f) => f === '')) ids.push(n.id)
       for (const [, l] of childLists(n)) walk(l)
     }

@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import MyHeader from './components/MyHeader'
 import Toolbar from './components/Toolbar'
 import Scratchbox from './components/Scratchbox'
 import CodeShowcase from './components/CodeShowcase'
 import Simulator from './components/Simulator'
-import { getState, putProgram } from './api/api.js'
+import StartScreen from './components/StartScreen'
+import { fileName, getState, loadFiles, pickInput, pickOutput, putProgram } from './api/api.js'
 import {
   childLists, clickTarget, containsId, createBlock, emptyFieldIds, insertBlock, locate,
-  moveBlock, removeBlock, slotState, updateBlock,
+  moveBlock, NO_FIELD_TYPES, removeBlock, slotState, updateBlock,
 } from './editor/ast.js'
 import { endDrag } from './editor/dnd.js'
 import { EditorContext } from './editor/EditorContext.jsx'
@@ -46,21 +47,59 @@ function App() {
   })
   const applySim = sim.apply
 
+  const adopt = useCallback((s) => {
+    setLoadedAst(s.ast)
+    setProgram(s.ast)
+    setSource(s.source)
+    setLineMap(s.lineMap)
+    setSelectedId(null)
+    setFocusId(null)
+    setShowEmpty(false)
+    setHighlight({ line: null, nodeId: null })
+    setApiError(null)
+    setLoaded(true)
+    applySim(s)
+  }, [applySim])
+
   useEffect(() => {
     let ignore = false
     getState()
       .then((s) => {
         if (ignore) return
-        setLoadedAst(s.ast)
-        setProgram(s.ast)
-        setSource(s.source)
-        setLineMap(s.lineMap)
-        setLoaded(true)
-        applySim(s)
+        if (s.loaded) adopt(s)
+        else applySim(s)
       })
       .catch((e) => setApiError(String(e)))
     return () => { ignore = true }
-  }, [applySim])
+  }, [adopt, applySim])
+
+  async function openInput() {
+    const path = await pickInput()
+    if (!path) return
+    sim.halt()
+    try {
+      const s = await loadFiles({ input: path })
+      adopt(s)
+      sim.setNotice({
+        kind: 'info',
+        text: `Betöltve: ${fileName(s.files.input)}. A napló helye: ${fileName(s.files.output)}.`,
+      })
+    } catch (e) {
+      sim.setNotice({ kind: 'error', text: e.message })
+    }
+  }
+
+  async function chooseOutput() {
+    const path = await pickOutput()
+    if (!path) return
+    try {
+      const s = await loadFiles({ output: path })
+      sim.apply(s)
+      sim.setNotice({ kind: 'info', text: `A napló helye: ${s.files.output}` })
+    } catch (e) {
+      sim.setNotice({ kind: 'error', text: e.message })
+    }
+  }
 
   useEffect(() => {
     if (!loaded || program === loadedAst) return
@@ -98,7 +137,7 @@ function App() {
     const block = createBlock(kind)
     setProgram((p) => insertBlock(p, targetId, where, block))
     setSelectedId(block.id)
-    if (kind !== 'mine') setFocusId(block.id)
+    if (!NO_FIELD_TYPES.has(kind)) setFocusId(block.id)
   }
 
   function drop(payload, targetId, where) {
@@ -166,6 +205,7 @@ function App() {
     selectedId, select, focusId, clearFocus, update, deleteBlock,
     canClickInsert, insertAtCursor, saveNow,
     source, lineMap, highlight, showEmpty, emptyIds, checkEmpty, apiError,
+    openInput, chooseOutput,
   }
 
   return (
@@ -174,6 +214,7 @@ function App() {
         <div className='flex min-h-screen flex-col bg-gray-200 xl:h-screen'>
           <MyHeader />
           <NoticeBar />
+          {!sim.loaded ? <StartScreen /> : (
           <div className='grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-2 xl:grid-cols-[minmax(150px,0.6fr)_minmax(300px,1.5fr)_minmax(200px,0.9fr)_minmax(380px,1.6fr)]'>
             <div className='flex min-h-0 min-w-0 flex-col xl:h-full max-xl:h-[32rem]'><Toolbar /></div>
             <div className='flex min-h-0 min-w-0 flex-col xl:h-full max-xl:h-[32rem]'><Scratchbox /></div>
@@ -186,6 +227,7 @@ function App() {
               </div>
             </div>
           </div>
+          )}
           <LogDialog />
         </div>
       </SimContext>

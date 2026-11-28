@@ -4,7 +4,7 @@ from functools import wraps
 player_chars = {"<": [-1,0], "v": [0,1], ">": [1,0], "^":[0,-1]}
 map_chars = {0: ".", 1: "#", 2:"@", 3: "+", 4:"T", 5: "~"}
 support_map_chars = ["#", "+", "T"]
-setting_options = ["battery_cap", "drill_usage", "step_usage", "turn_usage", "mine_usage", "isThere_usage", "print_usage", "place_usage"]
+setting_options = ["battery_cap", "drill_usage", "step_usage", "turn_usage", "mine_usage", "isThere_usage", "print_usage", "place_usage", "safeToDrill_usage", "isThere_extended"]
 
 def consume_energy(key):
     def consume_decorator(func):
@@ -36,18 +36,28 @@ class Map:
                 elif char not in map_chars.values():
                     raise BuildError("SYNTAX_ERROR", "Hiba a térkép syntaxisában!")
         self.settings = {}
-        for key, val in settings.items():
-            if key not in setting_options:
-                raise BuildError("SYNTAX_ERROR", "Hibás beállítás opció!")
-            if not val.isdecimal() and int(val) < 0:
-                raise BuildError("SYNTAX_ERROR", "Hibás beállítás érték")
-            self.settings[key] = int(val)
+        try:
+            for key, val in settings.items():
+                if key == "isThere_extended":
+                    if type(val) is not bool:
+                        raise BuildError("SYNTAX_ERROR", "Hibás beállítás érték")
+                    self.settings[key] = val
+                    continue
+                if key not in setting_options:
+                    raise BuildError("SYNTAX_ERROR", "Hibás beállítás opció!")
+                if int(val) < 0:
+                    raise BuildError("SYNTAX_ERROR", "Hibás beállítás érték")
+                self.settings[key] = int(val)
+        except:
+            raise BuildError("SYNTAX_ERROR", "Hibás beállítások")
         for setting in setting_options:
             if setting not in self.settings.keys():
                 if setting == "battery_cap":
-                    settings[setting] = 15
+                    self.settings[setting] = 15
+                elif setting == "isThere_extended":
+                    self.settings[setting] = False
                 else:
-                    settings[setting] = 1
+                    self.settings[setting] = 1
         self.energy = self.settings["battery_cap"]
         self.energy_capacity = self.energy
 
@@ -60,21 +70,24 @@ class Map:
 
     def _replace_under(self, char:str):
         self.map[self.robot_y][self.robot_x] = char
+        self._discover(self.robot_x, self.robot_y)
 
     def _discover(self, x,y):
-            self.discovered[y][x] = self.map[y][x]
+        self.discovered[y][x] = self.map[y][x]
 
-    def _check_collapse(self):
+    def _check_collapse(self, xin, yin):
         counter = 0
         check_iterator = [-1,0,1]
         for x in check_iterator:
             for y in check_iterator:
-                newx = self.robot_x + x
-                newy = self.robot_y + y
+                if x == 0 and y == 0:
+                    continue
+                newx = xin + x
+                newy = yin + y
                 if 0 <= newy < self.y and 0 <= newx < self.x and self.map[newy][newx] not in support_map_chars:
                     counter += 1
 
-        if counter >= 7:
+        if counter >= 6:
             raise MineScriptRuntimeError("E_MINE_COLLAPSE")
 
 
@@ -115,6 +128,8 @@ class Map:
     def isThere(self, search_type):
         if search_type not in map_chars.keys():
             raise MineScriptRuntimeError("E_BAD_ARG")
+        if not self.settings["isThere_extended"] and search_type not in (0,1,2):
+            raise MineScriptRuntimeError("E_BAD_ARG")
         new_x, new_y = self._getCordsInFrontOf()
         if not new_x < 0:
             searched = self.map[new_y][new_x]
@@ -137,14 +152,29 @@ class Map:
 
     @consume_energy("drill_usage")
     def drill(self):
-        if not self.isThere(3):
+        new_x, new_y = self._getCordsInFrontOf()
+        if new_x < 0:
             raise MineScriptRuntimeError("E_NOT_DRILLABLE")
-        self.move(1) #Javítani
+        char_at_front = self.map[new_y][new_x]
+        if char_at_front != "+":
+            raise MineScriptRuntimeError("E_NOT_DRILLABLE")
+        self.robot_x = new_x
+        self.robot_y = new_y
         self._replace_under(".")
-        self._check_collapse()
+        self._check_collapse(self.robot_x, self.robot_y)
 
     @consume_energy("place_usage")
     def place(self):
+        if self.map[self.robot_y][self.robot_x] == "~":
+            raise MineScriptRuntimeError("E_CANNOT_PLACE")
         self._replace_under("T")
 
+    @consume_energy("safeToDrill_usage")
+    def safeToDrill(self):
+        new_x, new_y = self._getCordsInFrontOf()
+        try:
+            self._check_collapse(new_x, new_y)
+        except:
+            return False
+        return True
         

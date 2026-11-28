@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import Field from '../../editor/Field.jsx'
 import { identError, simplevalError } from '../../editor/ast.js'
+import { commandCls } from '../../tools.js'
 import { useEditor } from '../../editor/EditorContext.jsx'
 import { DeleteButton, Handle, Kw } from './BlockParts.jsx'
 import useBlockRing from './useBlockRing.js'
@@ -17,7 +18,17 @@ export default function CommandBlock({ node }) {
       value={node.arg}
       check={simplevalError}
       onCommit={(v) => update(node.id, (n) => { n.arg = v })}
-      autoFocus={first}
+      autoFocus={first && node.type !== 'remove'}
+      onFocus={clearFocus}
+    />
+  )
+  const listField = (
+    <Field
+      value={node.ident}
+      check={identError}
+      onCommit={(v) => update(node.id, (n) => { n.ident = v })}
+      placeholder='lista'
+      autoFocus={first && node.type === 'remove'}
       onFocus={clearFocus}
     />
   )
@@ -27,6 +38,11 @@ export default function CommandBlock({ node }) {
   else if (node.type === 'turn') content = <><Kw>turn by</Kw>{argField}</>
   else if (node.type === 'print') content = <><Kw>print</Kw>{argField}</>
   else if (node.type === 'mine') content = <Kw>mine here</Kw>
+  else if (node.type === 'drill') content = <Kw>drill forward</Kw>
+  else if (node.type === 'place') content = <Kw>place here</Kw>
+  else if (node.type === 'charge') content = <Kw>charge</Kw>
+  else if (node.type === 'add') content = <><Kw>add</Kw>{argField}<Kw>to</Kw>{listField}</>
+  else if (node.type === 'remove') content = <><Kw>remove</Kw>{listField}<Kw>@</Kw>{argField}</>
   else if (node.type === 'set') {
     content = (
       <>
@@ -50,7 +66,7 @@ export default function CommandBlock({ node }) {
       ref={blockRef}
       data-node-id={node.id}
       onClick={(e) => { e.stopPropagation(); select(node.id) }}
-      className={`flex flex-wrap items-center gap-1.5 rounded border-[0.15rem] border-blue-400 bg-blue-100 px-1.5 py-1 ${ring}`}
+      className={`flex flex-wrap items-center gap-1.5 rounded border-[0.15rem] ${commandCls(node.type)} px-1.5 py-1 ${ring}`}
     >
       <Handle id={node.id} blockRef={blockRef} />
       {content}

@@ -2,10 +2,12 @@
 setlocal EnableDelayedExpansion
 
 rem Hasznalat: run_all.bat [bemeneti mappa] [kimeneti mappa]
-rem Minden input_XXX.txt fajlra lefuttatja a robot.exe -q modjat, az eredmeny output_XXX.txt.
+rem Belso teszteleshez: minden input_XXX.txt fajlra lefuttatja a robot.exe -q modjat, az eredmeny output_XXX.txt.
+rem A robot.exe-t eloszor a dist\robot mappaban keresi (lasd build.md).
 rem Alapertelmezes: a bemeneti mappa az aktualis mappa, a kimenet ugyanoda kerul.
 
-set "EXE=%~dp0robot.exe"
+set "EXE=%~dp0dist\robot\robot.exe"
+if not exist "%EXE%" set "EXE=%~dp0robot.exe"
 set "IN=%~1"
 if "%IN%"=="" set "IN=."
 set "OUT=%~2"
